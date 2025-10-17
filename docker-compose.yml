@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+ questdb:
+   image: questdb/questdb:latest
+   container_name: questdb
+   restart: unless-stopped
+   ports:
+     - "8812:8812"   # Postgres wire protocol
+     - "9000:9000"   # Web console / REST
+     - "9009:9009"   # ILP
+   environment:
+     - QDB_CAIRO_MAT_VIEW_ENABLED=true
+     - QDB_PG_READONLY_USER_ENABLED=true
+     - QDB_CAIRO_SQL_COPY_ROOT=/var/lib/questdb/import
+   volumes:
+     - questdb-data:/var/lib/questdb/db
+     - ./:/var/lib/questdb/import
+
+ grafana:
+   image: grafana/grafana:latest
+   container_name: grafana
+   restart: unless-stopped
+   ports:
+     - "3000:3000"
+   depends_on:
+     - questdb
+
+volumes:
+ questdb-data:
+
+
