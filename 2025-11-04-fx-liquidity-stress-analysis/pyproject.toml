@@ -1,0 +1,24 @@
+[project]
+name = "fx-liquidity-stress"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+  "pandas==2.3.3",
+  "poethepoet==0.37.0",
+  "pyarrow==21.0.0",
+  "requests==2.32.5",
+  "scikit-learn==1.7.2",
+  "xgboost==3.1.0",
+]
+
+[tool.poe.tasks]
+# if you have access to a QuestDB instance with parquet export enabled, you can use
+# the convert/export_to_parquet.py script instead, as it is more efficient. To be
+# conservative, we are defaulting to CSV export plus parquet conversion via pandas
+
+convert = { cmd = "python steps/convert_to_parquet.py", env = { PYTHONPATH = "." } }
+train   = { cmd = "python steps/train.py",              env = { PYTHONPATH = "." } }
+infer   = { cmd = "python steps/inference.py",          env = { PYTHONPATH = "." } }
+
+pipeline = ["convert", "train", "infer"]
+
