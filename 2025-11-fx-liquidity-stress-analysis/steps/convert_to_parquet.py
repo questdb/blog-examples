@@ -5,23 +5,30 @@ import pandas as pd
 from config.settings import QUESTDB_PATH, PARQUET_OUTPUT_PATH, TABLE_NAME, ROWS_LIMIT
 
 query = f"""
+WITH training_data AS (
+  SELECT timestamp, symbol,
+    asks[1][1] as ask_price, bids[1][1] as bid_price,
+    asks[2][1] as ask_volume, bids[2][1] as bid_volume
+    FROM {TABLE_NAME}
+    WHERE symbol = 'EURUSD'
+    AND timestamp BETWEEN dateadd('d', -2, now()) AND dateadd('d', -1, now())
+    LIMIT {ROWS_LIMIT}
+)
 SELECT
    timestamp,
    symbol,
-   asks[1][1] - bids[1][1] AS spread,
-   (asks[1][1] - bids[1][1]) / ((asks[1][1] + bids[1][1]) / 2) * 10000 AS spread_bps,
-   bids[2][1] + asks[2][1] AS total_volume,
-   (bids[2][1] - asks[2][1]) / (bids[2][1] + asks[2][1]) AS imbalance,
-   bids[1][1] AS bid_price,
-   asks[1][1] AS ask_price,
-   (bids[1][1] + asks[1][1]) / 2 AS mid_price
-FROM {TABLE_NAME}
-WHERE symbol = 'EURUSD'
- AND dateadd('d', -1, now()) < timestamp
-LIMIT {ROWS_LIMIT};
+   avg(ask_price - bid_price) AS spread,
+   avg((ask_price - bid_price) / ((ask_price + bid_price) / 2) * 10000) AS spread_bps,
+   avg(bid_volume + ask_volume) AS total_volume,
+   avg((bid_volume - ask_volume) / (bid_volume + ask_volume)) AS imbalance,
+   avg(bid_price) AS bid_price,
+   avg(ask_price) AS ask_price,
+   avg((bid_price + ask_price) / 2) AS mid_price
+FROM training_data
+SAMPLE BY 500T;
 """
 
-print(f"Exporting {ROWS_LIMIT} rows")
+print(f"Exporting rows")
 
 response = requests.get(
    url=f"{QUESTDB_PATH.rstrip('/')}/exec",
@@ -30,7 +37,7 @@ response = requests.get(
 response.raise_for_status()
 data = response.json()
 
-print(f"Converting {ROWS_LIMIT} rows to Parquet")
+print(f"Converting rows to Parquet")
 columns = [col['name'] for col in data['columns']]
 df = pd.DataFrame(data['dataset'], columns=columns)
 
