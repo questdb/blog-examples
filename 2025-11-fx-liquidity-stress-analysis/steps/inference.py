@@ -7,7 +7,7 @@ from src.feature_extraction import FeatureEngineer
 from src.model import LiquidityStressModel
 from config.settings import QUESTDB_PATH, TABLE_NAME, MODEL_PATH, INFERENCE_OUTPUT
 
-# 1) Fetch the latest 20 rows (CSV via /exp), same colums as in training
+# 1) Fetch the latest 50 rows (CSV via /exp), same colums as in training
 EXP_URL = f"{QUESTDB_PATH.rstrip('/')}/exp"
 sql = f"""
 SELECT

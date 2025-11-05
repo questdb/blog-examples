@@ -7,7 +7,7 @@ QUESTDB_PATH = "https://demo.questdb.io"
 TABLE_NAME = "market_data"
 
 # Rows to export
-ROWS_LIMIT = 5000000
+ROWS_LIMIT = 2000000
 
 # Where to write the Parquet file
 PARQUET_OUTPUT_PATH = "dataset/output.parquet"
