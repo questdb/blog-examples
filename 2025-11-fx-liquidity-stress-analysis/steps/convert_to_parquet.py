@@ -25,7 +25,7 @@ SELECT
    avg(ask_price) AS ask_price,
    avg((bid_price + ask_price) / 2) AS mid_price
 FROM training_data
-SAMPLE BY 500T FILL(prev);
+SAMPLE BY 1s FILL(prev);
 """
 
 print(f"Exporting rows")

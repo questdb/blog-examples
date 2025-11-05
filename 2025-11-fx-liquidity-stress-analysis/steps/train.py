@@ -10,11 +10,12 @@ if __name__ == "__main__":
    file = PARQUET_OUTPUT_PATH
 
    feature_cols = [
-       'spread_bps', 'spread_ma_5m', 'spread_std_5m',
-       'volume_ma_5m', 'imbalance_ma_5m',
-       'price_change_1m', 'price_change_5m', 'volatility_5m',
-       'spread_trend', 'volume_surge'
-   ]
+    "spread_bps", "spread_ma_5m", "spread_std_5m",
+    "total_volume", "volume_ma_5m",
+    "imbalance", "imbalance_ma_5m",
+    "price_change_1m", "price_change_5m",
+    "volatility_5m", "spread_trend", "volume_surge",
+    ]
 
    loader = DataLoader(file)
    df = loader.load_data()

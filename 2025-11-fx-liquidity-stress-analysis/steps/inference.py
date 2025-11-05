@@ -7,7 +7,7 @@ from src.feature_extraction import FeatureEngineer
 from src.model import LiquidityStressModel
 from config.settings import QUESTDB_PATH, TABLE_NAME, MODEL_PATH, INFERENCE_OUTPUT
 
-# 1) Fetch the latest 50 rows (CSV via /exp), same colums as in training
+# 1) Fetch the latest 10K rows (CSV via /exp), same columns as in training
 EXP_URL = f"{QUESTDB_PATH.rstrip('/')}/exp"
 sql = f"""
 SELECT
@@ -22,7 +22,7 @@ SELECT
    (bids[1][1] + asks[1][1]) / 2 AS mid_price
 FROM {TABLE_NAME}
 WHERE symbol = 'EURUSD'
-LIMIT -50
+LIMIT -10000
 """
 
 r = requests.get(EXP_URL, params={"fmt": "csv", "query": sql})
@@ -35,8 +35,9 @@ engineer = FeatureEngineer()
 df = engineer.create_features(df)
 
 feature_cols = [
-    "spread_bps", "total_volume", "imbalance",
-    "spread_ma_5m", "spread_std_5m",
+    "spread_bps", "spread_ma_5m", "spread_std_5m",
+    "total_volume", "volume_ma_5m",
+    "imbalance", "imbalance_ma_5m",
     "price_change_1m", "price_change_5m",
     "volatility_5m", "spread_trend", "volume_surge",
 ]
@@ -61,4 +62,4 @@ result.to_csv(INFERENCE_OUTPUT, index=False)
 print(f"Wrote inference results → {INFERENCE_OUTPUT}")
 
 # Display sample
-print(result[["timestamp", "stress_probability", "alert_level"]].to_string(index=False))
+print(result[["timestamp", "stress_probability", "alert_level"]])
