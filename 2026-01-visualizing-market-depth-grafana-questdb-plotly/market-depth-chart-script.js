@@ -155,7 +155,7 @@ return {
       gridcolor: "rgba(255,255,255,0.1)",
       zeroline: false
     },
-    margin: { t: 20, l: 40, r: 10, b: 30 },
+    margin: { t: 20, l: 55, r: 10, b: 30 },
     shapes: [
       {
         type: "line",
