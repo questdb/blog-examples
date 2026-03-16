@@ -1,0 +1,3 @@
+requests
+questdb
+psycopg2-binary
