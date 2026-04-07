@@ -1,0 +1,26 @@
+[project]
+name = "pytorch-questdb-timesfm"
+version = "0.1.0"
+description = "Tutorial: QuestDB time-series data with Google's TimesFM foundation model"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0.0",
+    "pyarrow>=15.0.0",
+    "requests>=2.31.0",
+    "torch>=2.0.0",
+]
+
+[project.optional-dependencies]
+# NOTE: TimesFM must be installed from source, not pip
+# git clone https://github.com/google-research/timesfm.git
+# cd timesfm && pip install -e ".[torch]"
+fast = [
+    "connectorx>=0.3.0",  # Faster queries via PostgreSQL protocol
+]
+
+[tool.poe.tasks]
+method1  = { cmd = "python steps/method1_direct_query.py", help = "Demo: Direct SQL queries" }
+method2  = { cmd = "python steps/method2_parquet_export.py", help = "Demo: Parquet export via API" }
+method3  = { cmd = "python steps/method3_parquet_partitions.py", help = "Demo: Direct partition access" }
+forecast = { cmd = "python steps/forecast.py", help = "Run TimesFM forecasting" }
+all      = ["method1", "method2", "forecast"]
