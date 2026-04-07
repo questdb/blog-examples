@@ -1,4 +1,4 @@
-# QuestDB → PyTorch: Time-Series Data Loading & Forecasting
+# QuestDB → TimesFM: Time-Series Data Loading & Forecasting
 
 This tutorial demonstrates how to efficiently load time-series data from QuestDB into Python, then run forecasts using Google's TimesFM foundation model.
 
