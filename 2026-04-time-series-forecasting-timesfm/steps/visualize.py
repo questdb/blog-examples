@@ -15,12 +15,15 @@ import matplotlib.dates as mdates
 
 from config.settings import DATASET_DIR, OUTPUT_DIR
 
-# QuestDB red brand color
-QUESTDB_RED = "#d12b25"
-HISTORY_COLOR = "#1f2937"
-FORECAST_COLOR = QUESTDB_RED
-BAND_80 = "#fca5a5"
-BAND_60 = "#ef4444"
+# Dark theme palette to match the QuestDB blog
+BG = "#0f172a"               # slate-900
+FG = "#e5e7eb"               # gray-200 (text/axes)
+GRID_COLOR = "#334155"       # slate-700
+HISTORY_COLOR = "#22d3ee"    # cyan-400
+FORECAST_COLOR = "#f472b6"   # pink-400
+BAND_80 = "#be185d"          # pink-700 (outer band)
+BAND_60 = "#ec4899"          # pink-500 (inner band)
+DIVIDER_COLOR = "#94a3b8"    # slate-400
 
 # How many minutes of history to show alongside the forecast
 HISTORY_MINUTES = 120
@@ -55,24 +58,17 @@ def plot_fan(
     y_label: str,
     out_path,
 ):
-    fig, ax = plt.subplots(figsize=(11, 5.5), dpi=130)
+    fig, ax = plt.subplots(figsize=(12, 6.5), dpi=160, facecolor=BG)
+    ax.set_facecolor(BG)
 
     # Historical context
     ax.plot(
         history_ts,
         history_values,
         color=HISTORY_COLOR,
-        linewidth=1.2,
+        linewidth=2.0,
+        alpha=0.95,
         label="History",
-    )
-
-    # Forecast line
-    ax.plot(
-        forecast_df["timestamp"],
-        forecast_df["forecast"],
-        color=FORECAST_COLOR,
-        linewidth=1.8,
-        label="Point forecast",
     )
 
     # 80% band (q10 - q90)
@@ -81,7 +77,7 @@ def plot_fan(
         forecast_df["q10"],
         forecast_df["q90"],
         color=BAND_80,
-        alpha=0.35,
+        alpha=0.85,
         label="80% interval (q10-q90)",
     )
 
@@ -92,39 +88,58 @@ def plot_fan(
             forecast_df["q20"],
             forecast_df["q80"],
             color=BAND_60,
-            alpha=0.25,
+            alpha=0.65,
             label="60% interval (q20-q80)",
         )
+
+    # Forecast line - drawn last so it sits on top of the bands
+    ax.plot(
+        forecast_df["timestamp"],
+        forecast_df["forecast"],
+        color=FORECAST_COLOR,
+        linewidth=3.0,
+        label="Point forecast",
+    )
 
     # Forecast boundary
     boundary = forecast_df["timestamp"].iloc[0]
     ax.axvline(
         boundary,
-        color="#6b7280",
+        color=DIVIDER_COLOR,
         linestyle="--",
-        linewidth=1.0,
+        linewidth=1.2,
         alpha=0.7,
     )
     ax.annotate(
         "Forecast start",
         xy=(boundary, ax.get_ylim()[1]),
-        xytext=(6, -14),
+        xytext=(8, -18),
         textcoords="offset points",
-        fontsize=9,
-        color="#6b7280",
+        fontsize=11,
+        color=DIVIDER_COLOR,
     )
 
-    ax.set_title(title, fontsize=14, fontweight="bold", pad=14)
-    ax.set_ylabel(y_label, fontsize=11)
-    ax.set_xlabel("Time (UTC)", fontsize=11)
-    ax.grid(True, alpha=0.25, linestyle=":")
-    ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+    ax.set_title(title, fontsize=18, fontweight="bold", pad=16, color=FG)
+    ax.set_ylabel(y_label, fontsize=13, color=FG)
+    ax.set_xlabel("Time (UTC)", fontsize=13, color=FG)
+    ax.tick_params(colors=FG, labelsize=11)
+    for spine in ax.spines.values():
+        spine.set_color(GRID_COLOR)
+    ax.grid(True, alpha=0.3, linestyle=":", color=GRID_COLOR)
+    legend = ax.legend(
+        loc="upper left",
+        fontsize=12,
+        framealpha=0.9,
+        facecolor=BG,
+        edgecolor=GRID_COLOR,
+        labelcolor=FG,
+    )
 
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
     fig.autofmt_xdate()
 
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    fig.savefig(out_path, dpi=150, bbox_inches="tight", facecolor=BG)
     plt.close(fig)
     print(f"  ✓ Saved {out_path}")
 
