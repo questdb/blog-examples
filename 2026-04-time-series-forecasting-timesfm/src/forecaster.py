@@ -175,9 +175,10 @@ class TimesFMForecaster:
         point = point_forecast[0]  # Shape: (horizon,)
         
         if quantile_forecast is not None:
-            # Shape: (1, horizon, num_quantiles) -> (horizon, num_quantiles)
-            quantiles = quantile_forecast[0]
-            # TimesFM 2.5 returns: mean, then 10th to 90th percentiles
+            # Shape: (1, horizon, 10) -> (horizon, 10)
+            # TimesFM 2.5 returns 10 columns: [mean, q10, q20, q30, q40, q50, q60, q70, q80, q90]
+            # Drop the mean (column 0) so quantiles are aligned with their labels.
+            quantiles = quantile_forecast[0][:, 1:]
             quantile_levels = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
         else:
             quantiles = None

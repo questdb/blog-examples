@@ -30,16 +30,15 @@ def query_rest_api(query: str) -> pd.DataFrame:
 def query_connectorx(query: str) -> pd.DataFrame:
     """
     Query QuestDB via PostgreSQL wire protocol using ConnectorX.
-    
-    Faster than REST for larger results. Requires: pip install connectorx
-    
-    Note: Uses redshift:// driver because QuestDB's PG wire protocol is 
-    compatible with Redshift's simpler dialect.
+
+    Returns Arrow/pandas directly with no text parsing, and handles arbitrary
+    result sizes without manual pagination. Requires: pip install connectorx
+
+    QUESTDB_PG uses the redshift:// scheme - this is ConnectorX's compatibility
+    mode for QuestDB's PostgreSQL wire protocol.
     """
     import connectorx as cx
-    # Replace postgresql:// with redshift:// for QuestDB compatibility
-    conn = QUESTDB_PG.replace("postgresql://", "redshift://")
-    return cx.read_sql(conn, query)
+    return cx.read_sql(QUESTDB_PG, query)
 
 
 # =============================================================================

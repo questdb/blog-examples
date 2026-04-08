@@ -4,9 +4,10 @@ from pathlib import Path
 # REST API - points to public demo instance (works out of the box)
 QUESTDB_HTTP = "https://demo.questdb.io"
 
-# PostgreSQL wire protocol - points to local QuestDB (for ConnectorX)
-# The demo instance doesn't expose port 8812 externally, so this requires local QuestDB
-QUESTDB_PG = "postgresql://admin:quest@localhost:8812/qdb"
+# PostgreSQL wire protocol - points to local QuestDB (for ConnectorX).
+# The demo instance doesn't expose port 8812 externally, so this requires local QuestDB.
+# Note: ConnectorX uses the redshift:// scheme as its QuestDB compatibility mode.
+QUESTDB_PG = "redshift://admin:quest@localhost:8812/qdb"
 
 # For local QuestDB with Parquet partitions (Method 3)
 QUESTDB_DATA_DIR = Path("/var/lib/questdb/db")

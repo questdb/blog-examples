@@ -4,6 +4,7 @@ pyarrow>=15.0.0
 requests>=2.31.0
 torch>=2.0.0
 connectorx>=0.3.0
+matplotlib
 
 # TimesFM must be installed separately from source:
 #   git clone https://github.com/google-research/timesfm.git
