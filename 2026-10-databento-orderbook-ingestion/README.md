@@ -5,48 +5,50 @@ into QuestDB.
 
 The example streams top-of-book quotes (`mbp-1`) and trades for every symbol
 in Databento's `EQUS.MINI` dataset into two QuestDB tables, then queries them
-with QuestDB SQL. It runs for a few minutes and stops, so it never stores
-more than a small sample.
+with QuestDB SQL. The connector streams until you stop it, so stop it once
+you have the sample you want.
 
 ## What's inside
 
 | File | Purpose |
 | --- | --- |
 | `connector.toml` | Connector configuration: dataset, subscriptions, tables, recovery |
-| `ingest_for.py` | Runs the connector for a fixed number of minutes, then stops it cleanly |
 | `sql/queries.sql` | Queries over the ingested data |
 | `run_sql.py` | Runs the named statements in a `.sql` file and prints the results |
 | `questdb-databento-dashboard.json` | QuestDB Web Console dashboard over the two tables |
-| `docker-compose.yml` | QuestDB 10.0.1 |
-| `.env.example` | Credentials and settings template |
+| `docker-compose.yml` | QuestDB 10.0.1, if you don't already run QuestDB |
 
-The Python scripts use only the standard library.
+`run_sql.py` uses only the Python standard library.
 
 ## Requirements
 
 - QuestDB 10.0.1 or later. The connector writes with the QuestDB Wire
   Protocol (QWP) over WebSocket on port `9000`.
 - A Databento API key with Live access to `EQUS.MINI`.
-- The `databento-questdb` connector binary.
-- Python 3.9 or later.
+- The `databento-questdb` connector binary on your `PATH`.
+- Python 3.9 or later, for `run_sql.py`.
 
 ## Quick start
 
 ```bash
-# 1. Start QuestDB
+# 1. Start QuestDB, if you don't already have 10.0.1 or later running
 docker compose up -d
 
-# 2. Configure credentials
-cp .env.example .env
-# edit .env: set DATABENTO_API_KEY, and DATABENTO_QUESTDB_BIN if the
-# connector binary is not on PATH
+# 2. Set credentials. Point QDB_CLIENT_CONF at your QuestDB if it is not
+#    on localhost:9000
+export DATABENTO_API_KEY='db-your-key-here'
+export QDB_CLIENT_CONF='ws::addr=localhost:9000;'
 
-# 3. Stream live data for three minutes
-python3 ingest_for.py --minutes 3
+# 3. Stream live data. Press Ctrl+C to stop when you have enough
+databento-questdb --config connector.toml
 
 # 4. Query what arrived
 python3 run_sql.py sql/queries.sql
 ```
+
+`databento-questdb --config connector.toml --check-config` validates the file
+and prints the effective settings, with the API key redacted, without
+connecting to anything.
 
 Open the QuestDB Web Console at http://localhost:9000 to explore the
 `equs_orderbook` and `equs_trades` tables.
@@ -96,19 +98,22 @@ Book levels are stored as `DOUBLE[][]` arrays of shape `[2, N]`, best level
 first: row 1 holds prices and row 2 sizes. `bids[1][1]` is the best bid price
 and `bids[2][1]` its size. An empty side of the book is `NULL`.
 
-`ingest_for.py` sends `SIGINT` when the time is up. The connector then drains
-in-flight rows, waits for QuestDB to acknowledge them, and saves a checkpoint
-under `state/`.
+On Ctrl+C (`SIGINT`) or `SIGTERM`, the connector drains in-flight rows, waits
+for QuestDB to acknowledge them, and saves a checkpoint under `state/`. If you
+run it in Docker, give it time to do that: `docker stop --time 60`, or
+`stop_grace_period: 60s` in Docker Compose, since Docker's default is 10
+seconds.
 
 ## Recovery after downtime
 
-Run `ingest_for.py` again and the connector resumes from the checkpoint. It
-asks Databento to replay from shortly before the last acknowledged record,
-using intraday replay, so rows published while it was stopped arrive first
-and the timeline has no gap:
+Start the connector again with the same config and it resumes from the
+checkpoint. It asks Databento to replay from shortly before the last
+acknowledged record, using intraday replay, so rows published while it was
+stopped arrive first and the timeline has no gap:
 
 ```bash
-python3 ingest_for.py --minutes 1
+databento-questdb --config connector.toml
+# Ctrl+C after a minute, then:
 python3 run_sql.py sql/queries.sql arrival_timeline duplicate_check
 ```
 
@@ -135,7 +140,8 @@ connection fails if QuestDB is down.
 
 - **Market hours matter.** Outside US regular trading hours few symbols
   trade, so some queries return few rows.
-- **Keep runs short.** `ALL_SYMBOLS` on `mbp-1` is a heavy stream during
-  regular hours. The connector stops after `--minutes`.
+- **Stop it when you are done.** `ALL_SYMBOLS` on `mbp-1` is a heavy stream
+  during regular hours, and the connector keeps writing until you press
+  Ctrl+C.
 - **Start fresh.** To start over, drop both tables and delete `state/`.
   Changing the subscriptions or tables also requires a new state directory.

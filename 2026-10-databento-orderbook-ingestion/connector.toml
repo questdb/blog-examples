@@ -3,7 +3,7 @@
 # Streams top-of-book quotes (mbp-1) and trades for every symbol in
 # Databento's EQUS.MINI dataset into two QuestDB tables.
 #
-# Credentials come from the environment (see .env.example):
+# Credentials come from the environment:
 #   DATABENTO_API_KEY  Databento API key with Live access to EQUS.MINI
 #   QDB_CLIENT_CONF    QuestDB client configuration string
 version = 1
