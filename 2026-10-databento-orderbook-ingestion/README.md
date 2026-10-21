@@ -8,6 +8,9 @@ in Databento's `EQUS.MINI` dataset into two QuestDB tables, then queries them
 with QuestDB SQL. The connector streams until you stop it, so stop it once
 you have the sample you want.
 
+The Databento connector requires QuestDB Enterprise. On QuestDB open source,
+see [Databento with Python](https://questdb.com/docs/integrations/other/databento/).
+
 ## What's inside
 
 | File | Purpose |
@@ -16,33 +19,35 @@ you have the sample you want.
 | `sql/queries.sql` | Queries over the ingested data |
 | `run_sql.py` | Runs the named statements in a `.sql` file and prints the results |
 | `questdb-databento-dashboard.json` | QuestDB Web Console dashboard over the two tables |
-| `docker-compose.yml` | QuestDB 10.0.1, if you don't already run QuestDB |
 
 `run_sql.py` uses only the Python standard library.
 
 ## Requirements
 
-- QuestDB 10.0.1 or later. The connector writes with the QuestDB Wire
-  Protocol (QWP) over WebSocket on port `9000`.
+- QuestDB Enterprise 4.0.0 or later. The connector writes with the QuestDB
+  Wire Protocol (QWP) over WebSocket on port `9000`.
+- The `databento-questdb` connector binary on your `PATH`. Get it through
+  your QuestDB Enterprise contact; see
+  [installing the connector](https://questdb.com/docs/connect/connectors/databento/#1-install-the-connector).
+- A QuestDB service account token with `HTTP` and `CREATE TABLE` grants; see
+  [authentication and TLS](https://questdb.com/docs/connect/connectors/databento/#questdb-authentication-and-tls).
 - A Databento API key with Live access to `EQUS.MINI`.
-- The `databento-questdb` connector binary on your `PATH`.
 - Python 3.9 or later, for `run_sql.py`.
 
 ## Quick start
 
 ```bash
-# 1. Start QuestDB, if you don't already have 10.0.1 or later running
-docker compose up -d
-
-# 2. Set credentials. Point QDB_CLIENT_CONF at your QuestDB if it is not
-#    on localhost:9000
+# 1. Set credentials. Point QDB_CLIENT_CONF at your QuestDB Enterprise
 export DATABENTO_API_KEY='db-your-key-here'
-export QDB_CLIENT_CONF='ws::addr=localhost:9000;'
+export QDB_CLIENT_CONF='ws::addr=localhost:9000;token=<your-token>;'
 
-# 3. Stream live data. Press Ctrl+C to stop when you have enough
+# 2. Stream live data. Press Ctrl+C to stop when you have enough
 databento-questdb --config connector.toml
 
-# 4. Query what arrived
+# 3. Query what arrived. The connector's service account owns the tables it
+#    creates, so its token can read them
+export QDB_HTTP='http://localhost:9000'
+export QDB_TOKEN='<your-token>'
 python3 run_sql.py sql/queries.sql
 ```
 
@@ -62,7 +67,7 @@ python3 run_sql.py sql/queries.sql latest_quotes
 ## Dashboard
 
 `questdb-databento-dashboard.json` is a native QuestDB Web Console dashboard, built as a
-notebook. It needs QuestDB 10.0 or later, or QuestDB Enterprise 4.0 or later. To install, open
+notebook. To install, open
 the **⋮** menu at the right end of the Web Console tab bar, choose **Import tabs**, and import the
 file. It opens as a new notebook tab, **Databento EQUS.MINI: US Equities Live**, already in the
 grid layout.
@@ -100,9 +105,9 @@ and `bids[2][1]` its size. An empty side of the book is `NULL`.
 
 On Ctrl+C (`SIGINT`) or `SIGTERM`, the connector drains in-flight rows, waits
 for QuestDB to acknowledge them, and saves a checkpoint under `state/`. If you
-run it in Docker, give it time to do that: `docker stop --time 60`, or
-`stop_grace_period: 60s` in Docker Compose, since Docker's default is 10
-seconds.
+run it under a service manager, give it more than the 30-second drain timeout
+before it kills the process, for example `terminationGracePeriodSeconds: 60`
+on Kubernetes or `docker stop --time 60`.
 
 ## Recovery after downtime
 

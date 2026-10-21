@@ -4,7 +4,8 @@
 Statements are separated by `-- name: <name>` comment lines. Uses the QuestDB
 REST API and the Python standard library only.
 
-    QDB_HTTP  QuestDB HTTP endpoint (default: http://127.0.0.1:9000)
+    QDB_HTTP   QuestDB HTTP endpoint (default: http://127.0.0.1:9000)
+    QDB_TOKEN  QuestDB REST token, sent as a bearer token
 
 Usage:
     python3 run_sql.py sql/queries.sql                 # run every statement
@@ -20,6 +21,7 @@ import urllib.parse
 import urllib.request
 
 QDB_HTTP = os.environ.get("QDB_HTTP", "http://127.0.0.1:9000").rstrip("/")
+QDB_TOKEN = os.environ.get("QDB_TOKEN")
 MAX_ROWS = 20
 
 
@@ -41,8 +43,9 @@ def parse_statements(path):
 
 def execute(sql):
     url = f"{QDB_HTTP}/exec?" + urllib.parse.urlencode({"query": sql, "limit": MAX_ROWS})
+    headers = {"Authorization": f"Bearer {QDB_TOKEN}"} if QDB_TOKEN else {}
     try:
-        with urllib.request.urlopen(url) as resp:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers)) as resp:
             return json.load(resp)
     except urllib.error.HTTPError as e:
         return json.load(e)
