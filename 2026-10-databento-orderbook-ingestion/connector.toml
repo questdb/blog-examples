@@ -1,0 +1,47 @@
+# Databento -> QuestDB connector configuration.
+#
+# Streams top-of-book quotes (mbp-1) and trades for every symbol in
+# Databento's EQUS.MINI dataset into two QuestDB tables.
+#
+# Credentials come from the environment:
+#   DATABENTO_API_KEY  Databento API key with Live access to EQUS.MINI
+#   QDB_CLIENT_CONF    QuestDB client configuration string
+version = 1
+on_task_failure = "exit"
+progress_log_interval_s = 30
+
+[pools.main]
+conf_env = "QDB_CLIENT_CONF"
+
+[[tasks]]
+name = "equs-mini"
+pool = "main"
+dataset = "EQUS.MINI"
+# Checkpoints live here. Restarting with the same directory resumes from the
+# last acknowledged record using Databento intraday replay. Relative paths
+# resolve from this file's directory.
+state_dir = "./state/equs-mini"
+
+[tasks.source]
+api_key_env = "DATABENTO_API_KEY"
+
+# Recovery replays from slightly before the last checkpoint, so a restart can
+# deliver some rows twice. replay_dedup filters the replayed records the
+# connector has already written; it assumes ts_event never goes backwards
+# per instrument, which holds for EQUS.MINI.
+
+# Top of book: every change to the best bid or offer, plus trades.
+[[tasks.subscriptions]]
+schema = "mbp-1"
+symbols = "ALL_SYMBOLS"
+stype_in = "raw_symbol"
+table = "equs_orderbook"
+replay_dedup = true
+
+# Trades only.
+[[tasks.subscriptions]]
+schema = "trades"
+symbols = "ALL_SYMBOLS"
+stype_in = "raw_symbol"
+table = "equs_trades"
+replay_dedup = true
