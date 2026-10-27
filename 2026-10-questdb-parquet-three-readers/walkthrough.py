@@ -1,10 +1,11 @@
 """One table, three readers: QuestDB SQL, Polars and DuckDB on the same Parquet.
 
-Runs against the QuestDB container from docker-compose.yml. Every step prints
-what it did, and every check compares a reader against the DataFrame the script
-sent, so a mismatch stops the run.
+Runs against QuestDB in Docker, with its data directory mounted at ./qdb_root.
+Every step prints what it did, and every check compares a reader against the
+DataFrame the script sent, so a mismatch stops the run.
 
-    docker compose up -d
+    docker run -d --name qdb-parquet-readers -p 9000:9000 \
+      -v "$PWD/qdb_root:/var/lib/questdb" questdb/questdb:10.1.0
     python walkthrough.py
 """
 import argparse

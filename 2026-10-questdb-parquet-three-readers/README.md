@@ -17,19 +17,19 @@ subscription, and no Java toolchain: QuestDB runs in Docker.
 
 | File | Purpose |
 | --- | --- |
-| `docker-compose.yml` | QuestDB 10.1.0, with its data directory mounted at `./qdb_root` |
 | `walkthrough.py` | The eight steps below, with a check after each one |
 | `requirements.txt` | Pinned Python dependencies |
 
 ## Requirements
 
-- Docker with Compose
+- Docker
 - Python 3.10 or later
 
 ## Quick start
 
 ```bash
-docker compose up -d
+docker run -d --name qdb-parquet-readers -p 9000:9000 \
+  -v "$PWD/qdb_root:/var/lib/questdb" questdb/questdb:10.1.0
 
 python3 -m venv .venv
 source .venv/bin/activate
@@ -97,7 +97,7 @@ writes a stable, Hive-partitioned layout to object storage.
 ## Clean up
 
 ```bash
-docker compose down
+docker rm -f qdb-parquet-readers
 rm -rf qdb_root
 ```
 
