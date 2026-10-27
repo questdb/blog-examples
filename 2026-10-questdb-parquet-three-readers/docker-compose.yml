@@ -1,0 +1,13 @@
+services:
+  questdb:
+    image: questdb/questdb:10.1.0
+    container_name: qdb-parquet-readers
+    ports:
+      # Web Console, REST API and QWP (WebSocket) all share port 9000
+      - "9000:9000"
+    environment:
+      QDB_TELEMETRY_ENABLED: "false"
+    volumes:
+      # The QuestDB root lives on the host, so Python can open the Parquet
+      # partition files QuestDB writes, without going through the database
+      - ./qdb_root:/var/lib/questdb
