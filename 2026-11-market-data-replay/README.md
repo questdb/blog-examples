@@ -33,7 +33,7 @@ export DATABENTO_API_KEY='db-your-key-here'
 export QDB_CLIENT_CONF='ws::addr=localhost:9000;token=<your-token>;'
 
 python3 backfill_day.py                  # NVDA and AAPL, 2 to 3 million rows
-python3 backfill_day.py --all-symbols    # every symbol, over 400 million rows
+python3 backfill_day.py --all-symbols    # every symbol, 350 to 450 million rows
 ```
 
 The script picks the latest full trading day, skipping weekends, market
@@ -45,8 +45,9 @@ Databento's metadata endpoints, which are not billed. If Databento would bill
 the download, it asks first; `--yes` skips the question. `--dry-run` stops
 after the estimate.
 
-A full day of every symbol is about 35 GB from Databento, so run it against a
-server with room for it.
+A full day of every symbol is about 30 GB from Databento and takes about
+75 GiB in QuestDB, plus the same again for staging tables while it loads, so
+run it against a server with room for it.
 
 | Option | Effect |
 | --- | --- |
@@ -54,6 +55,8 @@ server with room for it.
 | `--all-symbols` | Every symbol in `EQUS.MINI` |
 | `--date 2026-10-23` | A specific trading day instead of the latest |
 | `--table-prefix equs` | Tables are `<prefix>_orderbook` and `<prefix>_trades` (default: `equs_hist`) |
+| `--batch-size 2000` | Symbols per Databento request, at most 2,000 (default: 2000) |
+| `--merge-minutes 10` | Time window per merge statement for batched loads (default: 10) |
 | `--bin PATH` | Connector binary, when it is not on `PATH` |
 | `--tls-skip-verify` | Accept QuestDB's TLS certificate without verifying it, for test servers with a self-signed certificate |
 
@@ -80,7 +83,28 @@ reach the generated file.
 | `equs_hist_orderbook` | `mbp-1` | Every change to the best bid or offer, plus trade events |
 | `equs_hist_trades` | `trades` | Trades only |
 
-Tables are created on first write, partitioned by day, with nanosecond
+### Loading every symbol
+
+Databento streams a request for an explicit list of symbols far faster than
+one for `ALL_SYMBOLS`, and accepts up to 2,000 symbols per request. So with
+`--all-symbols`, or any list longer than `--batch-size`, the script:
+
+1. Fetches the day's symbols from Databento's `definition` schema, about
+   13,000 for `EQUS.MINI`.
+2. Downloads them in parallel batches, one connector task and one staging
+   table per batch, `<prefix>_stageNN_orderbook` and `<prefix>_stageNN_trades`.
+   Each Databento request returns rows in time order, so each staging table is
+   written in order.
+3. Merges the staging tables into the final tables one time window at a time,
+   in order, with `INSERT INTO ... SELECT ... ORDER BY ts_recv`. Every window
+   lands after the previous one, so QuestDB only appends and never rewrites a
+   partition for out-of-order data.
+4. Checks that the final row count matches the staging tables, then drops
+   them.
+
+### Tables
+
+Tables are partitioned by day, with nanosecond
 `ts_event` and `ts_recv` columns and `ts_recv` as the designated timestamp.
 Book levels are stored as `DOUBLE[][]` arrays of shape `[2, N]`, best level
 first: row 1 holds prices and row 2 sizes. `bids[1][1]` is the best bid price
@@ -92,5 +116,9 @@ Ctrl+C stops the connector cleanly, and running the same command again
 resumes. The connector downloads `mbp-1` first, then `trades`, and skips
 whichever is already complete. A query that was interrupted starts again
 from 04:00, so its rows from the first attempt are written twice. For a
-clean load after an interruption, drop both tables and delete the run's
-`state/<prefix>-<day>-<symbols>/` directory before running again.
+clean load after an interruption, drop the tables it writes, including any
+staging tables, and delete the run's `state/<prefix>-<day>-<symbols>/`
+directory before running again.
+
+For batched loads, an interrupted merge resumes after the last merged window
+when you run the same command again. Completed downloads are not repeated.
