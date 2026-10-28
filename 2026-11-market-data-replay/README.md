@@ -56,6 +56,7 @@ run it against a server with room for it.
 | `--date 2026-10-23` | A specific trading day instead of the latest |
 | `--table-prefix equs` | Tables are `<prefix>_orderbook` and `<prefix>_trades` (default: `equs_hist`) |
 | `--batch-size 2000` | Symbols per Databento request, at most 2,000 (default: 2000) |
+| `--split-batch 5` | Rerun batch 5 as smaller requests of `--split-size` symbols (default: 250), replacing its partial staging tables |
 | `--merge-minutes 10` | Time window per merge statement for batched loads (default: 10) |
 | `--bin PATH` | Connector binary, when it is not on `PATH` |
 | `--tls-skip-verify` | Accept QuestDB's TLS certificate without verifying it, for test servers with a self-signed certificate |
@@ -122,3 +123,9 @@ directory before running again.
 
 For batched loads, an interrupted merge resumes after the last merged window
 when you run the same command again. Completed downloads are not repeated.
+
+Databento returns a request's rows in time order across all its symbols, so
+one slow symbol can hold back a whole batch. If one batch lags far behind the
+others, stop the run and rerun it with `--split-batch N`. The script drops
+that batch's partial staging tables and checkpoint and downloads its symbols
+as smaller parallel requests; finished batches are skipped.
