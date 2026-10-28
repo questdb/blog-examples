@@ -71,7 +71,7 @@ to `QDB_CLIENT_CONF`.
 ## How it works
 
 The script writes a Historical connector configuration to
-`state/equs-<day>-<symbols>/connector.toml` and runs the connector, which
+`state/<prefix>-<day>-<symbols>/connector.toml` and runs the connector, which
 exits when the day is loaded. Credentials stay in the environment and never
 reach the generated file.
 
@@ -93,4 +93,4 @@ resumes. The connector downloads `mbp-1` first, then `trades`, and skips
 whichever is already complete. A query that was interrupted starts again
 from 04:00, so its rows from the first attempt are written twice. For a
 clean load after an interruption, drop both tables and delete the run's
-`state/equs-<day>-<symbols>/` directory before running again.
+`state/<prefix>-<day>-<symbols>/` directory before running again.

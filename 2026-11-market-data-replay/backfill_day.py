@@ -192,7 +192,8 @@ def main():
 
     cost = estimate(meta, symbols, start, end)
 
-    task = f"equs-{day}-{label}"
+    # The connector needs a new state directory when the tables change.
+    task = f"{args.table_prefix}-{day}-{label}".replace("_", "-")
     config = HERE / "state" / task / "connector.toml"
     write_config(config, task, symbols, start, end, args.table_prefix)
     print(f"\nTables: {args.table_prefix}_orderbook, {args.table_prefix}_trades")
