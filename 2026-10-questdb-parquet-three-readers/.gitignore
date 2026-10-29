@@ -1,0 +1,2 @@
+# QuestDB data directory mounted into the container
+qdb_root/
