@@ -104,9 +104,9 @@ def same_stats(a, b):
 
 
 def partition_files(table_dir, days):
-    """Current data.parquet for each day. A rewrite creates a new versioned
-    directory (2026-10-20.7 replaces 2026-10-20.3), and the old one lingers
-    until QuestDB purges it, so pick the highest version per day."""
+    """Current data.parquet for each day. Compaction can write a partition to a
+    new versioned directory (2026-10-21.10 replaces 2026-10-21.4), and the old
+    one lingers until QuestDB purges it, so pick the highest version per day."""
     current = {}
     for path in glob.glob(os.path.join(table_dir, "*", "data.parquet")):
         name = os.path.basename(os.path.dirname(path))
@@ -238,8 +238,8 @@ def main():
         print(f"  ^ VWAP over {DAYS[1]}..{DAYS[3]}: two Parquet days and one native day")
 
         step("6. Readers two and three: Polars and DuckDB open the files directly")
-        table_dir = next(p for p in glob.glob(os.path.join(args.root, "db", "trades~*"))
-                         if os.path.isdir(p))
+        table_dir = os.path.join(args.root, "db", scalar(
+            db, "SELECT directoryName FROM tables() WHERE table_name = 'trades'"))
         files = partition_files(table_dir, PARQUET_DAYS)
         for day, path in files.items():
             print(f"  {day}: {os.path.relpath(path, HERE)}")

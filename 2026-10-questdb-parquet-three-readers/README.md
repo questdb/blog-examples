@@ -94,6 +94,10 @@ both. That's fine for exploring, but build pipelines on the `COPY` export in
 `qdb_root/export/trades_export/`, or on QuestDB Enterprise cold storage, which
 writes a stable, Hive-partitioned layout to object storage.
 
+After a `--reset`, the dropped table's `trades~N` folder can also linger next to
+the new one. `SELECT directoryName FROM tables() WHERE table_name = 'trades'`
+names the current one.
+
 ## Clean up
 
 ```bash
