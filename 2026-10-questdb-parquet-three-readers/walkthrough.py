@@ -4,8 +4,8 @@ Runs against QuestDB in Docker, with its data directory mounted at ./qdb_root.
 Every step prints what it did, and every check compares a reader against the
 DataFrame the script sent, so a mismatch stops the run.
 
-    docker run -d --name qdb-parquet-readers -p 9000:9000 \
-      -v "$PWD/qdb_root:/var/lib/questdb" questdb/questdb:10.1.0
+    docker run --rm -d --name qdb-parquet-readers -p 9000:9000 \
+      -v ./qdb_root:/var/lib/questdb questdb/questdb:10.1.0
     python walkthrough.py
 """
 import argparse
@@ -303,7 +303,7 @@ def main():
         check("the replayed trade did not add a row",
               scalar(db, "SELECT count() FROM trades") == trades.height + 1)
 
-        step("8. A stable copy for tools outside QuestDB")
+        step("8. Export the table as Parquet with COPY")
         export_id = scalar(db, "COPY trades TO 'trades_export' WITH FORMAT PARQUET")
         export_dir = os.path.join(args.root, "export", "trades_export")
         wait_for(db, f"SELECT count() FROM sys.copy_export_log "

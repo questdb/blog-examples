@@ -28,8 +28,8 @@ subscription, and no Java toolchain: QuestDB runs in Docker.
 ## Quick start
 
 ```bash
-docker run -d --name qdb-parquet-readers -p 9000:9000 \
-  -v "$PWD/qdb_root:/var/lib/questdb" questdb/questdb:10.1.0
+docker run --rm -d --name qdb-parquet-readers -p 9000:9000 \
+  -v ./qdb_root:/var/lib/questdb questdb/questdb:10.1.0
 
 python3 -m venv .venv
 source .venv/bin/activate
@@ -90,9 +90,11 @@ These files belong to a live table. QuestDB rewrites them when late rows
 arrive, and it can replace one with a compacted copy in a new versioned
 directory, such as `2026-10-21.10` replacing `2026-10-21.4`. The old directory
 lingers until QuestDB purges it, so a glob over `2026-10-21.*` can briefly match
-both. That's fine for exploring, but build pipelines on the `COPY` export in
-`qdb_root/export/trades_export/`, or on QuestDB Enterprise cold storage, which
-writes a stable, Hive-partitioned layout to object storage.
+both.
+
+To get Parquet out of `qdb_root`, or Parquet for the result of a query rather
+than a whole table, use `COPY`, which takes a table name or a query. The
+walkthrough's export is in `qdb_root/export/trades_export/`.
 
 After a `--reset`, the dropped table's `trades~N` folder can also linger next to
 the new one. `SELECT directoryName FROM tables() WHERE table_name = 'trades'`
@@ -101,7 +103,7 @@ names the current one.
 ## Clean up
 
 ```bash
-docker rm -f qdb-parquet-readers
+docker stop qdb-parquet-readers
 rm -rf qdb_root
 ```
 
