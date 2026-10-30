@@ -114,28 +114,29 @@ and `bids[2][1]` its size. An empty side of the book is `NULL`.
 
 ## Replay
 
-`replay.py` streams rows back in the order they happened, as fast as the
-consumer can take them, for uses like backtesting:
+`replay.py` streams rows back as fast as the consumer can take them, for uses
+like backtesting:
 
 ```bash
 python3 replay.py equs_all_orderbook equs_all_trades
 python3 replay.py equs_all_orderbook --limit 1000000
-python3 replay.py equs_all_orderbook --split-by symbol --splits 8
+python3 replay.py equs_all_orderbook --connections 8
 ```
 
-Each stream runs on its own connection and thread and hands Arrow batches to
-`publish()`, the function to fill in with your consumer. A stream is a sequence
-of consecutive time windows, `--window-seconds` of event time each (default:
-one hour), so no query outlives the server's `query.timeout`.
+Each connection runs in its own thread and hands Arrow batches to `publish()`,
+the function to fill in with your consumer. The script cuts each table into
+consecutive time slices of about `--slice-rows` rows (default: 5 million), using
+row counts per minute, so no query outlives the server's `query.timeout`.
 
-By default each table is one stream in strict `ts_recv` order, and the script
-counts any row that arrives out of order. Tables are independent of each other.
-`mbp-1` includes trade events, so `equs_all_orderbook` alone is one strict
-sequence of quotes and trades.
+By default each table uses one connection, which reads the slices in order, so
+the table arrives in strict `ts_recv` order. The script counts any row that
+arrives out of order. Tables are independent of each other. `mbp-1` includes
+trade events, so `equs_all_orderbook` alone is one strict sequence of quotes and
+trades.
 
-`--split-by symbol --splits N` lists the symbols with `LATEST ON`, divides them
-into N groups and runs N streams per table. Order then holds within each group,
-so per symbol, but not across groups.
+`--connections N` reads faster but gives up that order: N connections take the
+next slice as they become free, so rows are in order within each slice and not
+between slices.
 
 ## Interruptions
 

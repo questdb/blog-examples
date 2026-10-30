@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Replay market data from QuestDB as fast as possible, in order.
+"""Replay market data from QuestDB as fast as possible.
 
 Streams rows from one or more tables over QuestDB's QWP protocol as Arrow
-batches and hands each batch to publish(). Each stream runs on one connection
-in its own thread, because queries on a connection run strictly one at a time.
+batches and hands each batch to publish(). Each connection runs in its own
+thread, because queries on a connection run strictly one at a time.
 
-A stream is a sequence of consecutive one-hour time windows rather than one long
-query, so that no query outlives the server's query.timeout (60 seconds by
-default). Windows run in order and do not overlap, and rows arrive in timestamp
-order within each one, so the whole stream is in timestamp order.
+A table is read as a sequence of consecutive time slices of about --slice-rows
+rows each, rather than as one long query, so that no query outlives the server's
+query.timeout (60 seconds by default). Rows arrive in timestamp order within
+each slice.
 
-By default each table is one stream, which keeps that table in strict timestamp
-order. --split-by symbol --splits N trades global order for throughput: it lists
-the symbols with LATEST ON, divides them into N groups, and runs N streams per
-table. Order then holds within each group, so per symbol, but not across groups.
+By default each table uses one connection, which reads the slices in order, so
+the whole table arrives in strict timestamp order. --connections N trades that
+order for throughput: N connections take the next slice as they become free, so
+order holds within each slice but not between them.
 
     QDB_CLIENT_CONF  QuestDB client configuration string
 
@@ -21,12 +21,13 @@ Usage:
     python3 replay.py equs_all_orderbook equs_all_trades
     python3 replay.py equs_all_orderbook --limit 1000000
     python3 replay.py equs_all_orderbook --start 2026-10-27T13:30:00Z --end 2026-10-27T14:00:00Z
-    python3 replay.py equs_all_orderbook equs_all_trades --split-by symbol --splits 8
+    python3 replay.py equs_all_orderbook equs_all_trades --connections 8
 
 Requires the questdb client (5.0 or later), pyarrow and numpy.
 """
 
 import argparse
+import collections
 import dataclasses
 import os
 import sys
@@ -58,112 +59,131 @@ def to_ns(column):
 
 @dataclasses.dataclass
 class Stream:
-    """One connection's replay of a table or a group, with its running totals."""
+    """One table's replay: the slices still to read, and its running totals."""
 
     table: str
-    select: str  # SELECT ... WHERE, ready for the time window to be appended
-    first_ts: int
-    last_ts: int
+    ts_col: str
+    slices: collections.deque
+    workers: int
     limit: int = 0
     rows: int = 0
     bytes: int = 0
-    windows: int = 0
     out_of_order: int = 0
     position: int = 0
-    done: bool = False
+    last_row_at: float = 0.0
+    lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
+
+    @property
+    def done(self):
+        return self.workers == 0
+
+    def take(self, batch):
+        """Claim a batch's rows, cut down to what --limit still allows."""
+        with self.lock:
+            if self.limit:
+                batch = batch.slice(0, self.limit - self.rows)
+            self.rows += batch.num_rows
+        return batch
+
+    def record(self, batch, out_of_order, position):
+        with self.lock:
+            self.bytes += batch.nbytes
+            self.out_of_order += out_of_order
+            self.position = max(self.position, position)
+            self.last_row_at = time.monotonic()
 
 
 def publish(table, batch):
     """Hand a batch of rows to whatever consumes the replay.
 
     This is the integration point: send to Kafka, feed a strategy, update a
-    book. Called from the stream's thread with a pyarrow.RecordBatch, in
-    timestamp order for that stream. Whatever runs here sets the pace, so a
-    slow consumer slows its stream down through QWP flow control.
+    book. Called from a connection's thread with a pyarrow.RecordBatch, in
+    timestamp order within its slice. Whatever runs here sets the pace, so a
+    slow consumer slows its connection down through QWP flow control.
     """
 
 
-def replay_window(reader, stream, ts_col, lo, hi, stop):
-    """Run one time window and publish its rows. Returns False to end the stream."""
-    sql = f"{stream.select} {ts_col} >= '{ns_to_literal(lo)}' AND {ts_col} < '{ns_to_literal(hi)}'"
-    # Every window reads the same SYMBOL columns, so keep the dictionary warm.
+def replay_slice(reader, stream, lo, hi, stop):
+    """Read one time slice and publish its rows. Returns False to stop reading."""
+    sql = (f"SELECT * FROM {stream.table} "
+           f"WHERE {stream.ts_col} >= '{ns_to_literal(lo)}' AND {stream.ts_col} < '{ns_to_literal(hi)}'")
+    # Every slice reads the same SYMBOL columns, so keep the dictionary warm.
     with reader.query(sql, reset_symbol_dict=False) as result:
+        previous = lo
         for batch in result.iter_arrow():
             if batch.num_rows == 0:  # a result can open with a schema-only batch
                 continue
-            if stream.limit and stream.rows + batch.num_rows >= stream.limit:
-                batch = batch.slice(0, stream.limit - stream.rows)
-            timestamps = to_ns(batch.column(ts_col))
-            stream.out_of_order += int(np.count_nonzero(np.diff(timestamps) < 0))
-            stream.out_of_order += int(stream.position > timestamps[0])
-            stream.position = int(timestamps[-1])
+            batch = stream.take(batch)
+            if batch.num_rows == 0:  # another connection reached --limit first
+                result.cancel()
+                return False
+            timestamps = to_ns(batch.column(stream.ts_col))
+            out_of_order = int(np.count_nonzero(np.diff(timestamps) < 0)) + int(previous > timestamps[0])
+            previous = int(timestamps[-1])
             publish(stream.table, batch)
-            stream.rows += batch.num_rows
-            stream.bytes += batch.nbytes
+            stream.record(batch, out_of_order, previous)
             if stop.is_set() or stream.rows == stream.limit:
                 result.cancel()
                 return False
     return True
 
 
-def run_stream(stream, conf, ts_col, window_ns, stop, errors):
-    """Replay one stream's time windows in order on a single connection."""
+def run_connection(stream, conf, stop, errors):
+    """Read slices on a single connection until none are left."""
     try:
         with questdb.connect(conf) as db, db.reader() as reader:
-            lo = stream.first_ts
-            while lo <= stream.last_ts:
-                hi = lo + window_ns
-                if not replay_window(reader, stream, ts_col, lo, hi, stop):
+            while not stop.is_set():
+                try:
+                    lo, hi = stream.slices.popleft()
+                except IndexError:
                     return
-                stream.windows += 1
-                lo = hi
+                if not replay_slice(reader, stream, lo, hi, stop):
+                    return
     except Exception as e:  # noqa: BLE001
         errors.append(f"{stream.table}: {e}")
         stop.set()
     finally:
-        stream.done = True
+        with stream.lock:
+            stream.workers -= 1
 
 
-def time_bounds(db, table, args):
-    """First and last timestamp in range as nanoseconds, or None for an empty range."""
+def time_slices(db, table, args):
+    """Consecutive (lo, hi) ranges of about --slice-rows rows, cut on minute boundaries."""
     clauses = []
     if args.start:
         clauses.append(f"{args.ts} >= {quoted(args.start)}")
     if args.end:
         clauses.append(f"{args.ts} < {quoted(args.end)}")
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+
     bounds = db.query(f"SELECT min({args.ts}) lo, max({args.ts}) hi FROM {table}{where}").to_arrow()
     if bounds.num_rows == 0 or bounds.column(0).null_count:
-        return None
-    return int(to_ns(bounds.column(0).combine_chunks())[0]), int(to_ns(bounds.column(1).combine_chunks())[0])
+        return []
+    lo = int(to_ns(bounds.column(0).combine_chunks())[0])
+    last = int(to_ns(bounds.column(1).combine_chunks())[0])
 
-
-def split_groups(db, table, args, lo, hi):
-    """Every distinct value of the split column, dealt into at most --splits groups."""
-    sql = (f"SELECT {args.split_by} FROM {table} "
-           f"WHERE {args.ts} >= '{ns_to_literal(lo)}' AND {args.ts} <= '{ns_to_literal(hi)}' "
-           f"LATEST ON {args.ts} PARTITION BY {args.split_by}")
-    values = sorted(v for v in db.query(sql).to_arrow().column(0).to_pylist() if v is not None)
-    return [group for group in (values[i::args.splits] for i in range(args.splits)) if group]
+    minutes = db.query(f"SELECT {args.ts} minute, count() rows FROM {table}{where} SAMPLE BY 1m").to_arrow()
+    slices = []
+    rows = 0
+    for minute, count in zip(to_ns(minutes.column(0).combine_chunks()), minutes.column(1).to_pylist()):
+        if rows and rows + count > args.slice_rows:
+            slices.append((lo, int(minute)))
+            lo = int(minute)
+            rows = 0
+        rows += count
+    slices.append((lo, last + 1))
+    return slices
 
 
 def build_streams(db, args):
     streams = []
     for table in args.tables:
-        bounds = time_bounds(db, table, args)
-        if bounds is None:
+        slices = time_slices(db, table, args)
+        if not slices:
             print(f"{table}: no rows in that range")
             continue
-        lo, hi = bounds
-        if args.split_by:
-            groups = split_groups(db, table, args, lo, hi)
-            limit = max(args.limit // len(groups), 1) if args.limit else 0
-            for group in groups:
-                values = ", ".join(quoted(v) for v in group)
-                select = f"SELECT * FROM {table} WHERE {args.split_by} IN ({values}) AND"
-                streams.append(Stream(table, select, lo, hi, limit))
-        else:
-            streams.append(Stream(table, f"SELECT * FROM {table} WHERE", lo, hi, args.limit or 0))
+        workers = min(args.connections, len(slices))
+        streams.append(Stream(table, args.ts, collections.deque(slices), workers, args.limit or 0))
     return streams
 
 
@@ -176,15 +196,15 @@ def reporter(streams):
         nonlocal last_time
         now = time.monotonic()
         seconds = max(now - last_time, 1e-9)
-        for table, (last_rows, last_bytes) in last.items():
-            group = [s for s in streams if s.table == table]
-            rows, size = sum(s.rows for s in group), sum(s.bytes for s in group)
-            if rows == last_rows and all(s.done for s in group):
+        for stream in streams:
+            last_rows, last_bytes = last[stream.table]
+            if stream.rows == last_rows:
                 continue
-            position = ns_to_literal(max(s.position for s in group))[11:23]
-            print(f"[{position}] {table:<24} {rows:>14,} rows {(rows - last_rows) / seconds:>12,.0f} rows/s "
-                  f"{(size - last_bytes) / seconds / 1e6:>9,.1f} MB/s", flush=True)
-            last[table] = (rows, size)
+            position = ns_to_literal(stream.position)[11:23]
+            print(f"[{position}] {stream.table:<24} {stream.rows:>14,} rows "
+                  f"{(stream.rows - last_rows) / seconds:>12,.0f} rows/s "
+                  f"{(stream.bytes - last_bytes) / seconds / 1e6:>9,.1f} MB/s", flush=True)
+            last[stream.table] = (stream.rows, stream.bytes)
         last_time = now
 
     return report
@@ -197,17 +217,17 @@ def main():
     parser.add_argument("--start", help="first timestamp, inclusive, for example 2026-10-27T13:30:00Z")
     parser.add_argument("--end", help="last timestamp, exclusive")
     parser.add_argument("--limit", type=int, help="stop after this many rows per table, for a quick test")
-    parser.add_argument("--split-by", help="column to divide each table by, for example symbol")
-    parser.add_argument("--splits", type=int, default=4, help="streams per table with --split-by (default: 4)")
-    parser.add_argument("--window-seconds", type=float, default=3600.0,
-                        help="event time per query; each must finish within the server's "
-                             "query.timeout (default: 3600)")
+    parser.add_argument("--connections", type=int, default=1,
+                        help="connections per table; above 1, rows are in order only within a slice (default: 1)")
+    parser.add_argument("--slice-rows", type=int, default=5_000_000,
+                        help="rows per query, roughly; each must finish within the server's query.timeout "
+                             "(default: 5000000)")
     parser.add_argument("--report-seconds", type=float, default=1.0, help="seconds between progress lines")
     parser.add_argument("--tls-skip-verify", action="store_true",
                         help="accept QuestDB's TLS certificate without verifying it, for self-signed test servers")
     args = parser.parse_args()
-    if args.splits < 1 or args.window_seconds <= 0:
-        parser.error("--splits must be at least 1 and --window-seconds positive")
+    if args.connections < 1 or args.slice_rows < 1:
+        parser.error("--connections and --slice-rows must be at least 1")
 
     conf = os.environ.get("QDB_CLIENT_CONF")
     if not conf:
@@ -222,11 +242,10 @@ def main():
 
     stop = threading.Event()
     errors = []
-    window_ns = int(args.window_seconds * NANOS)
-    threads = [threading.Thread(target=run_stream, args=(s, conf, args.ts, window_ns, stop, errors), daemon=True)
-               for s in streams]
-    print(f"Replaying {', '.join(args.tables)}: {len(streams)} stream(s), {args.window_seconds:g}s windows",
-          flush=True)
+    threads = [threading.Thread(target=run_connection, args=(s, conf, stop, errors), daemon=True)
+               for s in streams for _ in range(s.workers)]
+    print(f"Replaying {', '.join(args.tables)}: {sum(len(s.slices) for s in streams)} slice(s), "
+          f"{len(threads)} connection(s)", flush=True)
     started = time.monotonic()
     for thread in threads:
         thread.start()
@@ -234,8 +253,9 @@ def main():
     report = reporter(streams)
     try:
         while not all(s.done for s in streams):
+            deadline = time.monotonic() + args.report_seconds
             for thread in threads:
-                thread.join(args.report_seconds / len(threads))
+                thread.join(max(deadline - time.monotonic(), 0))
             report()
     except KeyboardInterrupt:
         print("\nStopping", flush=True)
@@ -243,16 +263,16 @@ def main():
         for thread in threads:
             thread.join(10)
 
-    elapsed = time.monotonic() - started
     for error in errors:
         print(f"Stream failed: {error}", file=sys.stderr)
-    for table in dict.fromkeys(s.table for s in streams):
-        group = [s for s in streams if s.table == table]
-        rows, size = sum(s.rows for s in group), sum(s.bytes for s in group)
-        print(f"{table}: {rows:,} rows, {sum(s.out_of_order for s in group):,} out of order, "
-              f"{rows / elapsed:,.0f} rows/s, {size / elapsed / 1e6:,.1f} MB/s")
+    # Time to the last row, so a table that ends early or a slow cancel does not skew its rate.
+    for stream in streams:
+        elapsed = max(stream.last_row_at - started, 1e-9)
+        print(f"{stream.table}: {stream.rows:,} rows, {stream.out_of_order:,} out of order, {elapsed:.1f}s, "
+              f"{stream.rows / elapsed:,.0f} rows/s, {stream.bytes / elapsed / 1e6:,.1f} MB/s")
     total = sum(s.rows for s in streams)
-    print(f"Replayed {total:,} rows over {len(streams)} stream(s) in {elapsed:.1f}s ({total / elapsed:,.0f} rows/s)")
+    elapsed = max(max(s.last_row_at for s in streams) - started, 1e-9)
+    print(f"Replayed {total:,} rows over {len(threads)} connection(s) in {elapsed:.1f}s ({total / elapsed:,.0f} rows/s)")
     return 1 if errors else 0
 
 
