@@ -66,6 +66,7 @@ class Stream:
     slices: collections.deque
     workers: int
     limit: int = 0
+    symbol_filter: str = ""
     rows: int = 0
     bytes: int = 0
     out_of_order: int = 0
@@ -106,7 +107,8 @@ def publish(table, batch):
 def replay_slice(reader, stream, lo, hi, stop):
     """Read one time slice and publish its rows. Returns False to stop reading."""
     sql = (f"SELECT * FROM {stream.table} "
-           f"WHERE {stream.ts_col} >= '{ns_to_literal(lo)}' AND {stream.ts_col} < '{ns_to_literal(hi)}'")
+           f"WHERE {stream.ts_col} >= '{ns_to_literal(lo)}' AND {stream.ts_col} < '{ns_to_literal(hi)}'"
+           f"{stream.symbol_filter}")
     # Every slice reads the same SYMBOL columns, so keep the dictionary warm.
     with reader.query(sql, reset_symbol_dict=False) as result:
         previous = lo
@@ -154,6 +156,8 @@ def time_slices(db, table, args):
         clauses.append(f"{args.ts} >= {quoted(args.start)}")
     if args.end:
         clauses.append(f"{args.ts} < {quoted(args.end)}")
+    if args.symbol:
+        clauses.append(f"symbol = {quoted(args.symbol)}")
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
 
     bounds = db.query(f"SELECT min({args.ts}) lo, max({args.ts}) hi FROM {table}{where}").to_arrow()
@@ -183,7 +187,8 @@ def build_streams(db, args):
             print(f"{table}: no rows in that range")
             continue
         workers = min(args.connections, len(slices))
-        streams.append(Stream(table, args.ts, collections.deque(slices), workers, args.limit or 0))
+        symbol_filter = f" AND symbol = {quoted(args.symbol)}" if args.symbol else ""
+        streams.append(Stream(table, args.ts, collections.deque(slices), workers, args.limit or 0, symbol_filter))
     return streams
 
 
@@ -216,6 +221,7 @@ def main():
     parser.add_argument("--ts", default="ts_recv", help="designated timestamp column (default: ts_recv)")
     parser.add_argument("--start", help="first timestamp, inclusive, for example 2026-10-27T13:30:00Z")
     parser.add_argument("--end", help="last timestamp, exclusive")
+    parser.add_argument("--symbol", help="replay only this symbol, for example NVDA")
     parser.add_argument("--limit", type=int, help="stop after this many rows per table, for a quick test")
     parser.add_argument("--connections", type=int, default=1,
                         help="connections per table; above 1, rows are in order only within a slice (default: 1)")
