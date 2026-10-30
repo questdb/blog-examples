@@ -138,9 +138,7 @@ trades.
 next slice as they become free, so rows are in order within each slice and not
 between slices.
 
-`--symbol` keeps one symbol. Slices are counted in that symbol's rows, so lower
-`--slice-rows` to keep the time range of each query short. Otherwise a single
-query can scan the whole table for that symbol and reach `query.timeout`.
+`--symbol` keeps one symbol, in strict `ts_recv` order.
 
 Suggested settings for each type of run:
 
@@ -150,7 +148,7 @@ Suggested settings for each type of run:
 | Busy period | `python3 replay.py equs_all_orderbook --start 2026-10-27T13:30:00Z --end 2026-10-27T14:00:00Z` | Strict order, covers the market open |
 | Full table, in order | `python3 replay.py equs_all_orderbook equs_all_trades` | Default settings: 1 connection per table, 5 million rows per slice |
 | Full table, fastest | `python3 replay.py equs_all_orderbook equs_all_trades --connections 8` | In order only within each slice |
-| One symbol, in order | `python3 replay.py equs_all_orderbook equs_all_trades --symbol NVDA --slice-rows 100000` | Many short queries, so none scans the whole table |
+| One symbol, in order | `python3 replay.py equs_all_orderbook equs_all_trades --symbol NVDA` | Strict order for that symbol |
 | Slow consumer | `python3 replay.py equs_all_orderbook --slice-rows 1000000` | Each query must finish within `query.timeout`, so smaller slices give it more time |
 
 ## Interruptions
