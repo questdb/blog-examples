@@ -125,8 +125,8 @@ python3 replay.py equs_all_orderbook --split-by symbol --splits 8
 
 Each stream runs on its own connection and thread and hands Arrow batches to
 `publish()`, the function to fill in with your consumer. A stream is a sequence
-of short consecutive time windows, `--window-seconds` of event time each, so no
-query outlives the server's `query.timeout`.
+of consecutive time windows, `--window-seconds` of event time each (default:
+one hour), so no query outlives the server's `query.timeout`.
 
 By default each table is one stream in strict `ts_recv` order, and the script
 counts any row that arrives out of order. Tables are independent of each other.

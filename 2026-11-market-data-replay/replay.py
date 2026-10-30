@@ -5,7 +5,7 @@ Streams rows from one or more tables over QuestDB's QWP protocol as Arrow
 batches and hands each batch to publish(). Each stream runs on one connection
 in its own thread, because queries on a connection run strictly one at a time.
 
-A stream is a sequence of short consecutive time windows rather than one long
+A stream is a sequence of consecutive one-hour time windows rather than one long
 query, so that no query outlives the server's query.timeout (60 seconds by
 default). Windows run in order and do not overlap, and rows arrive in timestamp
 order within each one, so the whole stream is in timestamp order.
@@ -199,9 +199,9 @@ def main():
     parser.add_argument("--limit", type=int, help="stop after this many rows per table, for a quick test")
     parser.add_argument("--split-by", help="column to divide each table by, for example symbol")
     parser.add_argument("--splits", type=int, default=4, help="streams per table with --split-by (default: 4)")
-    parser.add_argument("--window-seconds", type=float, default=30.0,
+    parser.add_argument("--window-seconds", type=float, default=3600.0,
                         help="event time per query; each must finish within the server's "
-                             "query.timeout (default: 30)")
+                             "query.timeout (default: 3600)")
     parser.add_argument("--report-seconds", type=float, default=1.0, help="seconds between progress lines")
     parser.add_argument("--tls-skip-verify", action="store_true",
                         help="accept QuestDB's TLS certificate without verifying it, for self-signed test servers")
