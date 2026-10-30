@@ -11,8 +11,10 @@ the Databento connector in Historical mode.
 | File | Purpose |
 | --- | --- |
 | `backfill_day.py` | Loads one full trading day from Databento's Historical API into QuestDB |
+| `replay.py` | Streams the tables back in order, as fast as possible, as Arrow batches |
 
-`backfill_day.py` uses only the Python standard library.
+`backfill_day.py` uses only the Python standard library. `replay.py` needs the
+`questdb`, `pyarrow` and `numpy` packages.
 
 ## Requirements
 
@@ -109,6 +111,31 @@ Tables are partitioned by day, with nanosecond
 Book levels are stored as `DOUBLE[][]` arrays of shape `[2, N]`, best level
 first: row 1 holds prices and row 2 sizes. `bids[1][1]` is the best bid price
 and `bids[2][1]` its size. An empty side of the book is `NULL`.
+
+## Replay
+
+`replay.py` streams rows back in the order they happened, as fast as the
+consumer can take them, for uses like backtesting:
+
+```bash
+python3 replay.py equs_all_orderbook equs_all_trades
+python3 replay.py equs_all_orderbook --limit 1000000
+python3 replay.py equs_all_orderbook --split-by symbol --splits 8
+```
+
+Each stream runs on its own connection and thread and hands Arrow batches to
+`publish()`, the function to fill in with your consumer. A stream is a sequence
+of short consecutive time windows, `--window-seconds` of event time each, so no
+query outlives the server's `query.timeout`.
+
+By default each table is one stream in strict `ts_recv` order, and the script
+counts any row that arrives out of order. Tables are independent of each other.
+`mbp-1` includes trade events, so `equs_all_orderbook` alone is one strict
+sequence of quotes and trades.
+
+`--split-by symbol --splits N` lists the symbols with `LATEST ON`, divides them
+into N groups and runs N streams per table. Order then holds within each group,
+so per symbol, but not across groups.
 
 ## Interruptions
 
