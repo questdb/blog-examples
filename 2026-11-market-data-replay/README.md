@@ -14,9 +14,16 @@ the Databento connector in Historical mode.
 | `replay.py` | Streams the tables back in order, as fast as possible, as Arrow batches |
 
 `backfill_day.py` uses only the Python standard library. `replay.py` needs the
-`questdb`, `pyarrow` and `numpy` packages.
+`questdb`, `pyarrow` and `numpy` packages, and was tested with `questdb` 6.0.1.
 
 ## Requirements
+
+`replay.py` works with QuestDB open source 10.0 or later, and with QuestDB
+Enterprise 4.0.0 or later, which is built on it. `backfill_day.py` needs
+QuestDB Enterprise, as the Databento connector is an Enterprise feature. On
+open source, load the data another way and replay it the same way.
+
+To load data with `backfill_day.py`:
 
 - QuestDB Enterprise 4.0.0 or later. The connector writes with the QuestDB
   Wire Protocol (QWP) over WebSocket on port `9000`.
@@ -37,6 +44,9 @@ export QDB_CLIENT_CONF='ws::addr=localhost:9000;token=<your-token>;'
 python3 backfill_day.py                  # NVDA and AAPL, 2 to 3 million rows
 python3 backfill_day.py --all-symbols    # every symbol, 350 to 450 million rows
 ```
+
+The replay examples below read a full day of every symbol, loaded with
+`python3 backfill_day.py --all-symbols --table-prefix equs_all`.
 
 The script picks the latest full trading day, skipping weekends, market
 holidays and early-close days, and covers the whole `EQUS.MINI` session from
@@ -118,15 +128,21 @@ and `bids[2][1]` its size. An empty side of the book is `NULL`.
 like backtesting:
 
 ```bash
+export QDB_CLIENT_CONF='ws::addr=localhost:9000;token=<your-token>;'
+
 python3 replay.py equs_all_orderbook equs_all_trades
 python3 replay.py equs_all_orderbook --limit 1000000
 python3 replay.py equs_all_orderbook --connections 8
 ```
 
+For a server with a self-signed certificate, use `wss::` and add
+`--tls-skip-verify`.
+
 Each connection runs in its own thread and hands Arrow batches to `publish()`,
 the function to fill in with your consumer. The script cuts each table into
 consecutive time slices of about `--slice-rows` rows (default: 5 million), using
-row counts per minute, so no query outlives the server's `query.timeout`.
+row counts per minute, so each query stays well within the server's
+`query.timeout` unless the consumer is slow.
 
 By default each table uses one connection, which reads the slices in order, so
 the table arrives in strict `ts_recv` order. The script counts any row that
@@ -138,7 +154,9 @@ trades.
 next slice as they become free, so rows are in order within each slice and not
 between slices.
 
-`--symbol` keeps one symbol, in strict `ts_recv` order.
+`--symbol` keeps one symbol, in strict `ts_recv` order. One symbol often has
+fewer rows than a single slice, so to read it over several connections, lower
+`--slice-rows` as well.
 
 Suggested settings for each type of run:
 
@@ -149,6 +167,7 @@ Suggested settings for each type of run:
 | Full table, in order | `python3 replay.py equs_all_orderbook equs_all_trades` | Default settings: 1 connection per table, 5 million rows per slice |
 | Full table, fastest | `python3 replay.py equs_all_orderbook equs_all_trades --connections 8` | In order only within each slice |
 | One symbol, in order | `python3 replay.py equs_all_orderbook equs_all_trades --symbol NVDA` | Strict order for that symbol |
+| One symbol, fastest | `python3 replay.py equs_all_orderbook equs_all_trades --symbol NVDA --slice-rows 100000 --connections 8` | In order only within each slice |
 | Slow consumer | `python3 replay.py equs_all_orderbook --slice-rows 1000000` | Each query must finish within `query.timeout`, so smaller slices give it more time |
 
 ## Interruptions
