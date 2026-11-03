@@ -139,10 +139,17 @@ For a server with a self-signed certificate, use `wss::` and add
 `--tls-skip-verify`.
 
 Each connection runs in its own thread and hands Arrow batches to `publish()`,
-the function to fill in with your consumer. The script cuts each table into
-consecutive time slices of about `--slice-rows` rows (default: 5 million), using
-row counts per minute, so each query stays well within the server's
-`query.timeout` unless the consumer is slow.
+the function to fill in with your consumer. Rows arrive in batches of at most
+16,384, and each batch is released once published, so memory stays the same
+however many rows a query returns.
+
+The script cuts each table into consecutive time slices with about the same
+number of rows, using row counts per minute: one slice per connection, split
+further only so that no slice exceeds `--slice-rows` (default: 100 million).
+That cap exists only for the server's `query.timeout`, 60 seconds by default,
+which each query must finish within. On a server with a longer timeout,
+`--slice-rows 0` removes the cap, so each connection reads its share in one
+query.
 
 By default each table uses one connection, which reads the slices in order, so
 the table arrives in strict `ts_recv` order. The script counts any row that
@@ -154,9 +161,7 @@ trades.
 next slice as they become free, so rows are in order within each slice and not
 between slices.
 
-`--symbol` keeps one symbol, in strict `ts_recv` order. One symbol often has
-fewer rows than a single slice, so to read it over several connections, lower
-`--slice-rows` as well.
+`--symbol` keeps one symbol, in strict `ts_recv` order.
 
 Suggested settings for each type of run:
 
@@ -164,11 +169,12 @@ Suggested settings for each type of run:
 | --- | --- | --- |
 | Quick test | `python3 replay.py equs_all_orderbook --limit 1000000` | Strict order, stops at the limit |
 | Busy period | `python3 replay.py equs_all_orderbook --start 2026-10-27T13:30:00Z --end 2026-10-27T14:00:00Z` | Strict order, covers the market open |
-| Full table, in order | `python3 replay.py equs_all_orderbook equs_all_trades` | Default settings: 1 connection per table, 5 million rows per slice |
+| Full table, in order | `python3 replay.py equs_all_orderbook equs_all_trades` | Default settings: 1 connection per table, at most 100 million rows per query |
+| Full table, one query | `python3 replay.py equs_all_orderbook --slice-rows 0` | Strict order in a single query; needs a `query.timeout` longer than the replay |
 | Full table, fastest | `python3 replay.py equs_all_orderbook equs_all_trades --connections 8` | In order only within each slice |
 | One symbol, in order | `python3 replay.py equs_all_orderbook equs_all_trades --symbol NVDA` | Strict order for that symbol |
-| One symbol, fastest | `python3 replay.py equs_all_orderbook equs_all_trades --symbol NVDA --slice-rows 100000 --connections 8` | In order only within each slice |
-| Slow consumer | `python3 replay.py equs_all_orderbook --slice-rows 1000000` | Each query must finish within `query.timeout`, so smaller slices give it more time |
+| One symbol, fastest | `python3 replay.py equs_all_orderbook equs_all_trades --symbol NVDA --connections 8` | In order only within each slice |
+| Slow consumer | `python3 replay.py equs_all_orderbook --slice-rows 20000000` | Each query must finish within `query.timeout`, so smaller slices give it more time |
 
 ## Interruptions
 

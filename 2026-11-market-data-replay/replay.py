@@ -5,10 +5,13 @@ Streams rows from one or more tables over QuestDB's QWP protocol as Arrow
 batches and hands each batch to publish(). Each connection runs in its own
 thread, because queries on a connection run strictly one at a time.
 
-A table is read as a sequence of consecutive time slices of about --slice-rows
-rows each, rather than as one long query, so that no query outlives the server's
-query.timeout (60 seconds by default). Rows arrive in timestamp order within
-each slice.
+A table is read as consecutive time slices with about the same number of rows:
+one per connection, split further only so that no slice exceeds --slice-rows
+(100 million by default). The cap exists only so each query finishes within the
+server's query.timeout (60 seconds by default); --slice-rows 0 removes it, for
+servers with a longer timeout. Memory does not depend on slice size, as rows
+arrive in Arrow batches of at most 16,384 rows. Rows arrive in timestamp order
+within each slice.
 
 By default each table uses one connection, which reads the slices in order, so
 the whole table arrives in strict timestamp order. --connections N trades that
@@ -149,8 +152,20 @@ def run_connection(stream, conf, stop, errors):
             stream.workers -= 1
 
 
+def slice_target(total, args):
+    """Rows per slice: an equal share for each connection, no more than --slice-rows.
+
+    The slice count is a multiple of --connections, so the connections finish
+    together. --slice-rows 0 removes the cap: one query per connection.
+    """
+    count = args.connections
+    if args.slice_rows:
+        count *= -(-total // (args.slice_rows * args.connections))
+    return max(-(-total // count), 1)
+
+
 def time_slices(db, table, args):
-    """Consecutive (lo, hi) ranges of about --slice-rows rows, cut on minute boundaries."""
+    """Consecutive (lo, hi) ranges of about equal row counts, cut on minute boundaries."""
     clauses = []
     if args.start:
         clauses.append(f"{args.ts} >= {quoted(args.start)}")
@@ -167,10 +182,12 @@ def time_slices(db, table, args):
     last = int(to_ns(bounds.column(1).combine_chunks())[0])
 
     minutes = db.query(f"SELECT {args.ts} minute, count() rows FROM {table}{where} SAMPLE BY 1m").to_arrow()
+    counts = minutes.column(1).to_pylist()
+    target = slice_target(sum(counts), args)
     slices = []
     rows = 0
-    for minute, count in zip(to_ns(minutes.column(0).combine_chunks()), minutes.column(1).to_pylist()):
-        if rows and rows + count > args.slice_rows:
+    for minute, count in zip(to_ns(minutes.column(0).combine_chunks()), counts):
+        if rows >= target:
             slices.append((lo, int(minute)))
             lo = int(minute)
             rows = 0
@@ -225,15 +242,15 @@ def main():
     parser.add_argument("--limit", type=int, help="stop after this many rows per table, for a quick test")
     parser.add_argument("--connections", type=int, default=1,
                         help="connections per table; above 1, rows are in order only within a slice (default: 1)")
-    parser.add_argument("--slice-rows", type=int, default=5_000_000,
-                        help="rows per query, roughly; each must finish within the server's query.timeout "
-                             "(default: 5000000)")
+    parser.add_argument("--slice-rows", type=int, default=100_000_000,
+                        help="most rows per query, roughly; each must finish within the server's query.timeout, "
+                             "and 0 means no limit (default: 100000000)")
     parser.add_argument("--report-seconds", type=float, default=1.0, help="seconds between progress lines")
     parser.add_argument("--tls-skip-verify", action="store_true",
                         help="accept QuestDB's TLS certificate without verifying it, for self-signed test servers")
     args = parser.parse_args()
-    if args.connections < 1 or args.slice_rows < 1:
-        parser.error("--connections and --slice-rows must be at least 1")
+    if args.connections < 1 or args.slice_rows < 0:
+        parser.error("--connections must be at least 1, and --slice-rows at least 0")
 
     conf = os.environ.get("QDB_CLIENT_CONF")
     if not conf:
