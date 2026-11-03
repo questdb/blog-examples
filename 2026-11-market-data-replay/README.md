@@ -157,9 +157,9 @@ arrives out of order. Tables are independent of each other. `mbp-1` includes
 trade events, so `equs_all_orderbook` alone is one strict sequence of quotes and
 trades.
 
-`--connections N` reads faster but gives up that order: N connections take the
-next slice as they become free, so rows are in order within each slice and not
-between slices.
+`--connections N` reads faster but gives up that order: each table gets N
+connections, each reading its own slice, so rows are in order within each slice
+and not between slices. Two tables with `--connections 8` open 16 connections.
 
 `--symbol` keeps one symbol, in strict `ts_recv` order.
 
