@@ -1,6 +1,7 @@
 # Replaying market data events from QuestDB
 
-Companion code for the QuestDB blog post on replaying market data events.
+Companion code for the QuestDB blog post
+[Market data replay for backtesting: a full day of US equities from QuestDB](https://questdb.com/blog/questdb-market-data-replay-backtesting/).
 
 The example loads one full trading day of US equities top-of-book quotes
 (`mbp-1`) and trades from Databento's `EQUS.MINI` dataset into QuestDB, using

@@ -1,7 +1,7 @@
 # Databento order book ingestion into QuestDB
 
-Companion code for the QuestDB blog post on streaming Databento market data
-into QuestDB.
+Companion code for the QuestDB blog post
+[Ingesting live market data from Databento into QuestDB](https://questdb.com/blog/ingest-databento-market-data-questdb/).
 
 The example streams top-of-book quotes (`mbp-1`) and trades for every symbol
 in Databento's `EQUS.MINI` dataset into two QuestDB tables, then queries them
