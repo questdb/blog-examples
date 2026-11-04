@@ -21,7 +21,9 @@ the Databento connector in Historical mode.
 `replay.py` works with QuestDB open source 10.0 or later, and with QuestDB
 Enterprise 4.0.0 or later, which is built on it. `backfill_day.py` needs
 QuestDB Enterprise, as the Databento connector is an Enterprise feature. On
-open source, load the data another way and replay it the same way.
+open source, load the same data with Python, as described in
+[Load a trading day on QuestDB open source](#load-a-trading-day-on-questdb-open-source),
+and replay it the same way.
 
 To load data with `backfill_day.py`:
 
@@ -82,6 +84,53 @@ cargo build --release --features questdb-rs/insecure-skip-verify
 
 For servers with a private CA, verify instead: add `tls_roots=/path/to/ca.pem;`
 to `QDB_CLIENT_CONF`.
+
+## Load a trading day on QuestDB open source
+
+Without the connector, load the data with the Databento and QuestDB Python
+clients, following the
+[Databento with Python guide](https://questdb.com/docs/integrations/other/databento/).
+The blog post replays this data:
+
+| Setting | Value |
+| --- | --- |
+| Dataset | `EQUS.MINI` |
+| Schemas | `mbp-1` for top of book, which also carries trade events, and `trades` for trades only |
+| Day | 2026-10-27, from 04:00 to 20:00 New York time (08:00 to 24:00 UTC) |
+| Symbols | `NVDA,AAPL` for a small test, or every symbol |
+
+The guide subscribes to Live data. For a past day, use Databento's Historical
+API instead, which needs Historical access to `EQUS.MINI`:
+
+```python
+import os
+
+import databento as db
+
+client = db.Historical(key=os.environ["DATABENTO_API_KEY"])
+request = dict(
+    dataset="EQUS.MINI",
+    schema="mbp-1",
+    symbols=["NVDA", "AAPL"],
+    start="2026-10-27T08:00:00Z",
+    end="2026-10-28T00:00:00Z",
+)
+print(client.metadata.get_cost(**request))  # not billed
+records = client.timeseries.get_range(**request)
+```
+
+Then write each record as the guide does, with one difference: write the
+record's symbol into the `symbol` column instead of a fixed `AAPL`, as
+`--symbol` filters on that column. Records carry an `instrument_id`, which the
+symbology in the response's metadata maps to a symbol. Run the same request
+with `schema="trades"` for the trades table.
+
+The guide's table has fewer columns than the connector's, and its designated
+timestamp is named `timestamp`, so pass it to the replay:
+
+```bash
+python3 replay.py top_of_book --ts timestamp
+```
 
 ## How it works
 
