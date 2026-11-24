@@ -1,0 +1,8 @@
+.env
+aws/CREATED_RESOURCES.md
+POST_DRAFT.md
+RESULTS.md.old
+__pycache__/
+upstream/
+# run output (created by the scripts); the results behind the README are kept internally
+runs/
