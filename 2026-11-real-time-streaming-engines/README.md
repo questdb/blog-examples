@@ -1,5 +1,8 @@
 # Streaming workloads on QuestDB, without a stream processor
 
+Companion code for the blog post
+[Do you need Spark or Flink for that? Streaming on QuestDB](https://questdb.com/blog/questdb-streaming-workloads-without-spark-or-flink/).
+
 This folder runs the workloads of
 [fmorillo7694/spark-rtm-vs-flink](https://github.com/fmorillo7694/spark-rtm-vs-flink), a
 Flink 2.3 vs Spark 4.3 Real-time Mode benchmark, on a single QuestDB server with no stream
